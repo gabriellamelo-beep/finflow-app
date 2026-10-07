@@ -317,13 +317,43 @@ function openAsset(id) {
       ${seg('mvKind', [['Aporte', 'Aporte'], ['Resgate', 'Resgate']], 'Aporte')}
       <input type="hidden" name="kind" value="Aporte">
       <div class="row2">${moneyField('amount', 0)}${field('Data', `<input name="date" type="date" value="${today()}">`)}</div>
+      ${a.ticker ? field('Quantidade (cotas)', `<input name="quantity" inputmode="decimal" placeholder="Ex.: 10">`, 'Necessária para a cotação automática continuar certa.') : ''}
       <button class="btn btn-primary" data-act="assetMove" data-id="${id}">${ic('swap')}Registrar</button>
     </form>
     <div class="sheet-actions">
       <button class="btn btn-ghost danger-text" data-act="assetDelete" data-id="${id}">${ic('trash')}Excluir</button>
-      <button class="btn btn-ghost" data-act="assetRename" data-id="${id}">${ic('edit')}Renomear</button>
+      <button class="btn btn-ghost" data-act="assetEdit" data-id="${id}">${ic('edit')}Editar dados</button>
     </div>`, { cls: 'sheet-form' });
 }
+
+function openAssetEdit(id) {
+  const a = DB.assets.find(x => x.id === id);
+  openSheet(`<h3 class="sheet-title">Editar investimento</h3>
+    <form class="form" onsubmit="return false">
+      ${field('Nome', `<input name="name" value="${esc(a.name)}">`)}
+      <div class="row2">
+        ${field('Tipo', `<select name="category">${options([...new Set([...Object.keys(ASSET_CATEGORY_LABELS), a.category])], a.category, x => ASSET_CATEGORY_LABELS[x] || x)}</select>`)}
+        ${field('Instituição', `<input name="institution" value="${esc(a.institution || '')}">`)}
+      </div>
+      <h4 class="sub-title">Atualização automática</h4>
+      ${field('% do CDI', `<input name="cdiPercent" inputmode="decimal" value="${a.cdiPercent ? num(a.cdiPercent, 0) : ''}" placeholder="Ex.: 100 ou 110">`, 'Renda fixa (CDB, LCI, reserva). O rendimento passa a contar a partir de hoje.')}
+      <div class="row2">
+        ${field('Ticker', `<input name="ticker" value="${esc(a.ticker || '')}" placeholder="PETR4, IVVB11, bitcoin" autocapitalize="off">`)}
+        ${field('Quantidade', `<input name="quantity" inputmode="decimal" value="${a.quantity ? String(a.quantity).replace('.', ',') : ''}">`)}
+      </div>
+      <p class="hint">Ações, FIIs e ETFs: código da B3. Cripto: nome no CoinGecko (bitcoin, ethereum). O saldo vira cotação × quantidade.</p>
+      <button class="btn btn-primary btn-xl" data-act="assetEditSave" data-id="${id}">${ic('check')}Salvar</button>
+    </form>`, { cls: 'sheet-form' });
+}
+ACT.assetEdit = el => { closeAllSheets(); setTimeout(() => openAssetEdit(el.dataset.id), 250); };
+ACT.assetEditSave = el => {
+  const a = DB.assets.find(x => x.id === el.dataset.id), v = formValues(sheetOf(el));
+  if (!v.name) return toast('Informe o nome.');
+  const cdi = parseMoney(v.cdiPercent);
+  if (cdi !== (a.cdiPercent || 0)) a.lastUpdate = today();
+  Object.assign(a, { name: v.name, category: v.category, institution: v.institution, cdiPercent: cdi, ticker: v.ticker.trim(), quantity: parseMoney(v.quantity) || a.quantity || 1 });
+  afterSave('Investimento atualizado.');
+};
 ACT.newAsset = () => openAsset();
 ACT.openAsset = el => openAsset(el.dataset.id);
 ACT.mvKind = el => {
@@ -348,14 +378,9 @@ ACT.assetUpdate = el => {
 };
 ACT.assetMove = el => {
   const a = DB.assets.find(x => x.id === el.dataset.id), v = formValues(el.closest('form'));
-  const err = recordMovement(a, v.kind, v.date || today(), parseMoney(v.amount));
+  const err = recordMovement(a, v.kind, v.date || today(), parseMoney(v.amount), parseMoney(v.quantity));
   if (err) return toast(err);
   afterSave(`${v.kind} registrado.`);
-};
-ACT.assetRename = async el => {
-  const a = DB.assets.find(x => x.id === el.dataset.id);
-  const name = prompt('Novo nome do investimento', a.name);
-  if (name && name.trim()) { a.name = name.trim(); afterSave('Nome atualizado.'); }
 };
 ACT.assetDelete = async el => {
   if (!await confirmSheet({ title: 'Excluir investimento?', text: 'O histórico de aportes dele também sai.', ok: 'Excluir', danger: true })) return;

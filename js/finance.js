@@ -248,6 +248,14 @@ function netWorth() {
   return { financial, goods, debts, total: financial + goods, net: financial + goods - debts };
 }
 
+/* Patrimônio do mês atual no histórico (meses anteriores ficam como estavam). */
+function recordHistory() {
+  const ym = curMonth(), nw = netWorth();
+  const entry = { month: ym, net: round2(nw.net), invested: round2(nw.financial) };
+  const h = DB.history.find(x => x.month === ym);
+  if (h) Object.assign(h, entry); else { DB.history.push(entry); DB.history.sort((a, b) => a.month.localeCompare(b.month)); }
+}
+
 /* ================= METAS ================= */
 function goalMonths(current, target, monthly, annual = 0.10) {
   if (current >= target) return 0;

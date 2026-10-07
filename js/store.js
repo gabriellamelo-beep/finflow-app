@@ -36,6 +36,7 @@ function defaultDB() {
     goals: [],
     wealth: [],
     rules: {},
+    history: [],
     ui: {},
   };
 }
@@ -62,11 +63,14 @@ function loadDB() {
 }
 
 function save() {
+  if (hasData()) recordHistory();
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(DB));
+    localStorage.setItem('finflow.changed', String(Date.now()));
   } catch (e) {
     toast('Não foi possível salvar: o armazenamento do aparelho está cheio.');
   }
+  if (typeof driveSchedule === 'function') driveSchedule();
 }
 
 const hasData = () => DB.expenses.length + DB.incomes.length + DB.purchases.length + DB.assets.length > 0;

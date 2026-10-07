@@ -24,10 +24,15 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => ap
 
 loadDB();
 applyTheme();
+driveHandleRedirect();
 rolloverAssets();
 const created = generateRecurring();
+if (hasData()) save(); // registra o patrimônio do mês no histórico
 route();
 if (created) toast(`${created} lançamento(s) recorrente(s) feitos automaticamente.`);
+// Ao abrir: cotações uma vez por dia e backup no Drive, se houver alterações.
+setTimeout(() => { if (hasData()) autoUpdateMarket(); driveSync({ quiet: true }); }, 1200);
+window.addEventListener('online', () => driveSync({ quiet: true }));
 
 if (navigator.storage?.persist) navigator.storage.persist().catch(() => { });
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

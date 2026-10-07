@@ -2,9 +2,9 @@
 /* Telas e roteamento. */
 
 const TABS = [['', 'home', 'Início'], ['lancamentos', 'list', 'Lançamentos'], ['+', 'plus', ''], ['cartoes', 'card', 'Cartões'], ['mais', 'grid', 'Mais']];
-const MORE_PAGES = ['mais', 'investimentos', 'orcamento', 'recorrentes', 'fluxo', 'metas', 'patrimonio', 'categorias', 'ajustes'];
+const MORE_PAGES = ['mais', 'investimentos', 'relatorios', 'orcamento', 'recorrentes', 'fluxo', 'metas', 'patrimonio', 'categorias', 'ajustes'];
 const ROUTES = {
-  '': renderHome, lancamentos: renderEntries, cartoes: renderCards, mais: renderMore, investimentos: renderInvest,
+  '': renderHome, lancamentos: renderEntries, cartoes: renderCards, mais: renderMore, investimentos: renderInvest, relatorios: renderReports,
   orcamento: renderBudget, recorrentes: renderRecurring, fluxo: renderCashFlow, metas: renderGoals,
   patrimonio: renderWealth, categorias: renderCategories, ajustes: renderSettings, novo: () => renderHome(),
 };
@@ -110,8 +110,12 @@ function renderHome() {
       <div>${kpi('Patrimônio líquido', brl(nw.net))}</div>
       <div class="wealth-split">${kpi('Investido', brl(inv.current), `<span class="${moneyClass(inv.profit)}">${pct(inv.profitPct, 1, true)}</span> no total`)}${kpi('No mês', brl(inv.monthProfit), 'rendimento', moneyClass(inv.monthProfit))}</div>
     </a>`);
+    const recent = Array.from({ length: 6 }, (_, i) => addMonths(ym, i - 5)).map(m => { const x = monthSummary(m); return { label: monthShort(m).slice(0, 3), title: monthName(m), a: x.income, b: x.expense }; });
+    if (recent.some(d => d.a || d.b)) html += section('Últimos 6 meses', `<a class="card" href="#/relatorios">${barsChart(recent)}</a>`, `<a class="link" href="#/relatorios">Relatórios</a>`);
     const lb = DB.settings.lastBackup ? daysBetween(DB.settings.lastBackup.slice(0, 10), today()) : null;
-    if (lb === null || lb > 14) html += `<button class="nudge" data-act="exportBackup">${ic('download')}<span>${lb === null ? 'Você ainda não fez backup dos dados deste celular.' : `Último backup há ${lb} dias.`} <b>Fazer agora</b></span></button>`;
+    if (driveConnected()) {
+      if (driveDirty() && !driveTokenOk()) html += `<button class="nudge" data-act="driveNow">${ic('cloud')}<span>Há alterações ainda não salvas no Google Drive. <b>Salvar agora</b></span></button>`;
+    } else if (lb === null || lb > 14) html += `<button class="nudge" data-act="driveSetup">${ic('cloud')}<span>${lb === null ? 'Seus dados estão só neste celular.' : `Último backup há ${lb} dias.`} <b>Ativar backup automático no Drive</b></span></button>`;
   }
   return html;
 }
@@ -171,7 +175,8 @@ LIVE.entriesSearch = el => {
 
 /* ================= CARTÕES ================= */
 function renderCards() {
-  let html = pageHead('Cartões', `<button class="icon-btn" data-act="newCard" aria-label="Novo cartão">${ic('plus')}</button>`);
+  const importBtn = `<label class="icon-btn file-btn" aria-label="Importar fatura (CSV)" title="Importar fatura (CSV)">${ic('upload')}<input type="file" accept=".csv,.txt,text/csv,text/plain" data-bind="statementFile" hidden></label>`;
+  let html = pageHead('Cartões', `${DB.cards.length ? importBtn : ''}<button class="icon-btn" data-act="newCard" aria-label="Novo cartão">${ic('plus')}</button>`);
   if (!DB.cards.length) return html + emptyState('card', 'Nenhum cartão', 'Cadastre seus cartões para acompanhar faturas e parcelas.', `<button class="btn btn-primary" data-act="newCard">${ic('plus')}Cadastrar cartão</button>`);
   const card = cardById(DB.ui.card) || DB.cards[0];
   const firstOpen = openInvoices().find(x => x.cardId === card.id);
@@ -199,7 +204,7 @@ function renderCards() {
   html += `<div class="mini-chart">${upcoming.map(x => `<button class="${x.m === ym ? 'on' : ''}" data-act="invoiceGo" data-v="${x.m}"><span class="mini-bar" style="height:${Math.max(4, x.v / max * 64)}px"></span><small>${monthShort(x.m)}</small></button>`).join('')}</div>`;
 
   html += section('Compras da fatura', items.length ? `<div class="list">${items.map(it => entryRow({ type: 'card', id: it.purchase.id, date: it.purchase.date, description: it.purchase.description, category: it.purchase.category, amount: it.amount, sub: `${fmtDay(it.purchase.date)}${it.purchase.count > 1 ? ` · ${it.n}/${it.purchase.count}` : ''}` })).join('')}</div>`
-    : emptyState('receipt', 'Fatura vazia', 'Nenhuma compra nesta fatura.'), `<button class="link" data-act="cardPurchase" data-id="${card.id}">${ic('plus')}Compra</button>`);
+    : emptyState('receipt', 'Fatura vazia', 'Nenhuma compra nesta fatura.'), `<span class="head-links"><label class="link file-btn">${ic('upload')}Importar CSV<input type="file" accept=".csv,.txt,text/csv,text/plain" data-bind="statementFile" hidden></label><button class="link" data-act="cardPurchase" data-id="${card.id}">${ic('plus')}Compra</button></span>`);
   return html;
 }
 ACT.selectCard = el => { DB.ui.card = el.dataset.id; save(); rerender(); };
@@ -215,6 +220,7 @@ ACT.cardPurchase = el => openQuickAdd('cartao', { cardId: el.dataset.id });
 function renderMore() {
   const tiles = [
     ['investimentos', 'trend', 'Investimentos', brl(assetTotals().current)],
+    ['relatorios', 'chart', 'Relatórios', 'gráficos e evolução'],
     ['orcamento', 'donut', 'Orçamento', `${Object.keys(DB.budgets).length} categorias`],
     ['recorrentes', 'repeat', 'Recorrentes', `${DB.recurring.filter(r => r.active).length} ativas`],
     ['fluxo', 'flow', 'Fluxo de caixa', 'próximos meses'],
@@ -229,7 +235,16 @@ function renderMore() {
 /* ================= INVESTIMENTOS ================= */
 function renderInvest() {
   const t = assetTotals(), rows = assetRows();
-  let html = pageHead('Investimentos', `<button class="icon-btn" data-act="newAsset" aria-label="Novo investimento">${ic('plus')}</button>`, '', '#/mais');
+  const mk = marketCfg(), ind = mk.indicators || {};
+  let html = pageHead('Investimentos', `<button class="icon-btn" data-act="updateMarket" aria-label="Atualizar cotações">${ic('refresh')}</button><button class="icon-btn" data-act="newAsset" aria-label="Novo investimento">${ic('plus')}</button>`, mk.updatedAt ? `Cotações de ${fmtDate(isoDate(new Date(mk.updatedAt)))} às ${pad(new Date(mk.updatedAt).getHours())}:${pad(new Date(mk.updatedAt).getMinutes())}` : '', '#/mais');
+  const chips = [
+    ind.cdi && ['CDI', `${num(ind.cdi.value, 2)}% a.a.`, ''],
+    ind.selic && ['Selic', `${num(ind.selic.value, 2)}%`, ''],
+    ind.ipca && ['IPCA 12m', `${num(ind.ipca.value, 2)}%`, ''],
+    ind.dolar && ['Dólar', brl(ind.dolar.value), pct(ind.dolar.change, 2, true)],
+    ind.bitcoin && ['Bitcoin', shortMoney(ind.bitcoin.value), pct(ind.bitcoin.change, 1, true)],
+  ].filter(Boolean);
+  if (chips.length) html += `<div class="market-strip">${chips.map(([l, v, c]) => `<div><small>${l}</small><b>${v}</b>${c ? `<span class="${c.startsWith('+') ? 'pos' : c.startsWith('-') ? 'neg' : ''}">${c}</span>` : ''}</div>`).join('')}</div>`;
   html += `<section class="card hero">
     <small>Total investido</small><div class="hero-value">${brl(t.current)}</div>
     <div class="hero-split">
@@ -238,6 +253,9 @@ function renderInvest() {
     </div>
     <p class="hero-note">Aportes do mês: ${brl(t.contributions)} · o rendimento não conta aportes.</p>
   </section>`;
+  const auto = DB.assets.filter(a => a.cdiPercent > 0 || (a.ticker && a.quantity > 0 && a.category !== 'Outros'));
+  if (rows.length && !auto.length) html += `<p class="info">${ic('info')}<span>Para atualizar sozinho, abra um investimento e informe o <b>% do CDI</b> (renda fixa) ou o <b>ticker e a quantidade</b> (ações, FIIs e cripto).</span></p>`;
+  else if (DB.assets.some(a => ['Acoes', 'ETFs', 'FIIs'].includes(a.category) && a.ticker) && !mk.brapiToken) html += `<p class="info">${ic('info')}<span>Ações, FIIs e ETFs precisam de um token gratuito da brapi.dev. <a href="#/ajustes">Configurar em Ajustes</a>.</span></p>`;
   if (!rows.length) return html + emptyState('trend', 'Nenhum investimento', 'Cadastre seus investimentos para acompanhar saldo e rendimento.', `<button class="btn btn-primary" data-act="newAsset">${ic('plus')}Novo investimento</button>`);
   const classes = {};
   rows.forEach(r => { classes[r.cls] = (classes[r.cls] || 0) + r.current; });
@@ -251,6 +269,43 @@ function renderInvest() {
   </button>`).join('')}</div>`, `<button class="link" data-act="newAsset">${ic('plus')}Novo</button>`);
   return html;
 }
+
+/* ================= RELATÓRIOS ================= */
+function renderReports() {
+  const n = DB.ui.repMonths || 12, cur = curMonth();
+  const months = Array.from({ length: n }, (_, i) => addMonths(cur, i - n + 1));
+  const data = months.map(m => { const s = monthSummary(m); return { label: monthShort(m).slice(0, 3), title: monthName(m), a: s.income, b: s.expense, saldo: s.balance, month: m }; });
+  const done = data.slice(0, -1).filter(d => d.a || d.b);
+  const avgIn = done.length ? sum(done, d => d.a) / done.length : 0, avgOut = done.length ? sum(done, d => d.b) / done.length : 0;
+  const best = [...done].sort((a, b) => b.saldo - a.saldo)[0], worst = [...done].sort((a, b) => a.saldo - b.saldo)[0];
+
+  let html = pageHead('Relatórios', '', 'Para onde vai e como cresce seu dinheiro', '#/mais');
+  html += section('Entradas e saídas', `<div class="card">${seg('repMonths', [[6, '6 meses'], [12, '12 meses']], n)}${barsChart(data, { line: 'saldo' })}</div>
+    <div class="summary-row">${kpi('Média de entradas', brl(avgIn), 'meses fechados', 'pos')}${kpi('Média de saídas', brl(avgOut), 'inclui faturas', 'neg')}${kpi('Sobra média', brl(avgIn - avgOut), '', moneyClass(avgIn - avgOut))}</div>
+    ${best && worst && best !== worst ? `<p class="hint">Melhor mês: ${monthName(best.month)} (${brl(best.saldo)}) · mais apertado: ${monthName(worst.month)} (${brl(worst.saldo)})</p>` : ''}`);
+
+  const ym = DB.ui.repMonth || cur, cats = byCategory(monthSummary(ym).expenses), total = sum(cats, c => c.amount);
+  const top = cats.slice(0, 7), rest = cats.slice(7);
+  const items = top.map(c => ({ label: catLabel(c.category), value: c.amount, color: catColor(c.category) }));
+  if (rest.length) items.push({ label: 'Outras', value: sum(rest, c => c.amount), color: '#94A3B8' });
+  html += section('Gastos por categoria', `${monthSwitch('repMonth', ym)}${total ? `<div class="card donut-card">${donutChart(items, shortMoney(total))}
+    <div class="donut-legend">${items.map(it => `<div><i style="background:${it.color}"></i><span>${esc(it.label)}</span><b>${pct(it.value / total * 100, 0)}</b><small>${brl(it.value)}</small></div>`).join('')}</div></div>`
+    : emptyState('donut', 'Sem gastos', `Nenhuma despesa em ${monthName(ym)}.`)}`);
+
+  const span = DB.ui.repSpan || '36';
+  let hist = [...DB.history].sort((a, b) => a.month.localeCompare(b.month));
+  if (span !== 'all') hist = hist.slice(-+span);
+  const points = hist.map(h => ({ label: monthShort(h.month), v: h.net, v2: h.invested }));
+  const hasInvested = hist.some(h => h.invested != null);
+  const first = hist[0], last = hist[hist.length - 1];
+  html += section('Evolução do patrimônio', `<div class="card">${seg('repSpan', [['12', '12 meses'], ['36', '3 anos'], ['all', 'Tudo']], span)}
+    ${lineChart(points, { label: 'Patrimônio líquido', label2: hasInvested ? 'Investido' : '' })}
+    ${first && last && first !== last ? `<p class="hint">${monthName(first.month)} → ${monthName(last.month)}: <b class="${moneyClass(last.net - first.net)}">&nbsp;${last.net >= first.net ? '+' : ''}${brl(last.net - first.net)}</b>${first.net > 0 ? `&nbsp;(${pct((last.net / first.net - 1) * 100, 0, true)})` : ''}</p>` : ''}</div>`);
+  return html;
+}
+ACT.repMonths = el => { DB.ui.repMonths = +el.dataset.v; save(); rerender(); };
+ACT.repSpan = el => { DB.ui.repSpan = el.dataset.v; save(); rerender(); };
+ACT.repMonth = el => { DB.ui.repMonth = addMonths(DB.ui.repMonth || curMonth(), +el.dataset.v); save(); rerender(); };
 
 /* ================= ORÇAMENTO ================= */
 function renderBudget() {
@@ -382,6 +437,12 @@ function renderSettings() {
     <button class="btn btn-soft" data-act="exportBackup">${ic('download')}Exportar backup</button>
     <label class="btn btn-soft file-btn">${ic('upload')}Restaurar backup<input type="file" accept=".json,application/json" data-bind="importFile" hidden></label>
     <small class="muted">${DB.settings.lastBackup ? `Último backup: ${fmtDate(DB.settings.lastBackup.slice(0, 10))}` : 'Nenhum backup feito ainda.'} · ${num(size / 1024, 0)} KB usados</small>
+  </div>`);
+  html += section('Backup automático no Google Drive', `<div class="card stack-gap">${driveStatusHtml()}</div>`);
+  html += section('Cotações automáticas', `<div class="card stack-gap">
+    <p class="muted">CDI, cripto e dólar atualizam sozinhos uma vez por dia. Para <b>ações, FIIs e ETFs</b>, crie um token gratuito em <a class="link" href="https://brapi.dev/dashboard" target="_blank" rel="noopener">brapi.dev</a> e cole aqui.</p>
+    ${field('Token da brapi', `<input type="password" value="${esc(marketCfg().brapiToken || '')}" placeholder="Opcional" autocomplete="off" data-bind="brapiToken">`, 'Fica salvo só neste aparelho e não vai para o backup.')}
+    <button class="btn btn-soft" data-act="updateMarket">${ic('refresh')}Atualizar cotações agora</button>
   </div>`);
   html += section('Instalar no celular', `<div class="card"><p class="muted"><b>iPhone (Safari):</b> toque em Compartilhar → Adicionar à Tela de Início.<br><b>Android (Chrome):</b> menu ⋮ → Instalar app (ou Adicionar à tela inicial).</p></div>`);
   html += section('Zona de perigo', `<div class="card"><button class="btn btn-ghost danger-text" data-act="wipe">${ic('trash')}Apagar todos os dados deste aparelho</button></div>`);
