@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FinFlow</title>
+  <meta name="description" content="Controle financeiro pessoal: despesas, cartões, orçamento e investimentos.">
+  <meta name="theme-color" content="#6D28D9">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="FinFlow">
+  <script>
+    try { var t = JSON.parse(localStorage.getItem('finflow.v1') || '{}').settings; if (t && (t.theme === 'light' || t.theme === 'dark')) document.documentElement.dataset.theme = t.theme; } catch (e) { }
+  </script>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <main id="view" class="view"></main>
+  <nav id="tabbar" class="tabbar" aria-label="Navegação principal"></nav>
+  <div id="sheets"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/util.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/finance.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/forms.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# Nunca publicar dados financeiros (backups e exportacoes)
+finflow-*.json
+_tmp*
+*.db
