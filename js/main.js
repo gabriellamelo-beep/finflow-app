@@ -30,9 +30,15 @@ const created = generateRecurring();
 if (hasData()) save(); // registra o patrimônio do mês no histórico
 route();
 if (created) toast(`${created} lançamento(s) recorrente(s) feitos automaticamente.`);
-// Ao abrir: cotações uma vez por dia e backup no Drive, se houver alterações.
+// Ao abrir: cotações uma vez por dia e sincronização com o PC pelo Drive.
 setTimeout(() => { if (hasData()) autoUpdateMarket(); driveSync({ quiet: true }); }, 1200);
 window.addEventListener('online', () => driveSync({ quiet: true }));
+// Ao voltar para o app: busca o que mudou no PC (no máximo a cada 30 s).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const last = driveCfg().lastSync ? new Date(driveCfg().lastSync).getTime() : 0;
+  if (Date.now() - last > 30000) driveSync({ quiet: true });
+});
 
 if (navigator.storage?.persist) navigator.storage.persist().catch(() => { });
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

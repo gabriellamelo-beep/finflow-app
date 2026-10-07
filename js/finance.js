@@ -164,7 +164,8 @@ function generateRecurring() {
       const date = dayInMonth(ym, r.day);
       if (date > t) break;
       if (!manualEntryExists(r, ym)) {
-        const entry = { id: uid(), date, category: r.category, description: r.description, amount: r.amount, recurringId: r.id };
+        // ID fixo por recorrência e mês: se o PC também lançar, a sincronização reconhece o mesmo lançamento.
+        const entry = { id: `${r.id}-${ym}`, date, category: r.category, description: r.description, amount: r.amount, recurringId: r.id };
         if (r.kind === 'Receita') DB.incomes.push(entry);
         else DB.expenses.push({ ...entry, payment: r.payment || 'PIX' });
         created++;

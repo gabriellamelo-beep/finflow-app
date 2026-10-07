@@ -1,11 +1,11 @@
 'use strict';
-/* Backup automático no Google Drive (mesmo mecanismo do Evolua).
+/* Sincronização com o PC e backup pelo Google Drive (login igual ao do Evolua).
    Login pelo Google no próprio navegador, sem servidor; o token vale ~1 h. O arquivo
    "finflow-backup.json" é atualizado ao abrir o app e logo depois de cada alteração; o Drive
    guarda as versões anteriores. Client ID e token ficam só neste aparelho, fora do backup. */
 
 const DRIVE_KEY = 'finflow.drive';
-const DRIVE_FILE = 'finflow-backup.json';
+const DRIVE_FILE = 'finflow-sync.json';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const DRIVE = { busy: false, timer: null };
 
@@ -50,7 +50,7 @@ function driveHandleRedirect() {
     const err = q.get('error');
     if (err && err !== 'access_denied') c.needsLogin = true;
     saveDrive(c);
-    setTimeout(() => toast(err === 'access_denied' ? 'Acesso ao Google Drive não autorizado.' : 'Entre de novo na sua conta Google para o backup no Drive.'), 300);
+    setTimeout(() => toast(err === 'access_denied' ? 'Acesso ao Google Drive não autorizado.' : 'Entre de novo na sua conta Google para sincronizar.'), 300);
   }
 }
 
@@ -66,8 +66,21 @@ async function driveFindFile() {
   const r = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&orderBy=modifiedTime desc&fields=files(id,modifiedTime)`);
   return (await r.json()).files?.[0] || null;
 }
-async function driveUpload() {
-  const c = driveCfg(), body = JSON.stringify({ app: 'finflow', source: 'mobile', version: 1, exportedAt: new Date().toISOString(), data: DB });
+async function driveDownload() {
+  const c = driveCfg();
+  if (!c.fileId) { c.fileId = (await driveFindFile())?.id || ''; saveDrive(c); }
+  if (!c.fileId) return null;
+  try {
+    return await (await driveFetch(`https://www.googleapis.com/drive/v3/files/${c.fileId}?alt=media`)).json();
+  } catch (e) {
+    if (e.message === 'auth') throw e;
+    c.fileId = ''; saveDrive(c);
+    return null;
+  }
+}
+
+async function driveUpload(payload) {
+  const c = driveCfg(), body = JSON.stringify(payload);
   if (!c.fileId) c.fileId = (await driveFindFile())?.id || '';
   if (c.fileId) {
     try {
@@ -81,18 +94,23 @@ async function driveUpload() {
   return (await r.json()).id;
 }
 
-/* Envia se houver alterações (ou force). Sem token válido: interactive = vai ao Google buscar. */
+/* Sincroniza: baixa o arquivo do Drive, junta com os dados deste celular e envia o resultado.
+   Sem token válido: interactive = vai ao Google buscar. */
 async function driveSync({ force = false, interactive = false, quiet = false } = {}) {
   if (!driveConnected() || DRIVE.busy) return;
-  if (!force && !driveDirty()) return;
   if (!driveTokenOk()) { if (interactive) driveAuthorize({ silent: !driveCfg().needsLogin }); return; }
   DRIVE.busy = true;
   try {
-    const id = await driveUpload();
+    const remote = await driveDownload();
+    const { payload, incoming, remoteChanged } = syncWithRemote(remote);
+    let id = driveCfg().fileId;
+    if (remoteChanged || force || !id) id = await driveUpload(payload);
     const c = driveCfg(); Object.assign(c, { fileId: id, lastSync: new Date().toISOString(), needsLogin: false }); saveDrive(c);
     DB.settings.lastBackup = c.lastSync;
     try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); localStorage.setItem('finflow.changed', String(Date.now() - 1000)); } catch (e) { }
-    if (!quiet) toast('Backup salvo no Google Drive.');
+    if (incoming) toast(`Sincronizado: ${incoming} alteração(ões) vindas do PC.`);
+    else if (!quiet) toast('Sincronizado com o Google Drive.');
+    if (incoming && !$('#sheets .sheet-wrap')) rerender();
   } catch (e) {
     console.error(e);
     if (e.message === 'auth') { if (interactive) driveAuthorize({ silent: true }); }
@@ -121,7 +139,9 @@ async function driveRestore() {
     const ok = await confirmSheet({ title: 'Restaurar backup do Drive?', text: `Backup salvo em ${fmtDate(isoDate(when))} às ${pad(when.getHours())}:${pad(when.getMinutes())}. Os dados atuais deste celular serão substituídos.`, ok: 'Restaurar' });
     if (!ok) return;
     applyImport(parsed);
-    toast('Backup do Drive restaurado.');
+    // O que veio do Drive passa a ser a base: a próxima sincronização não reenvia nada como novo.
+    saveSyncBase({ data: syncDenormalize(syncNormalize(DB)), stamps: parsed.sync?.stamps || {}, deleted: parsed.sync?.deleted || {} });
+    toast('Dados do Drive restaurados neste celular.');
     go('#/');
   } catch (e) { console.error(e); toast(e.message === 'auth' ? 'Entre de novo na sua conta Google.' : 'Não foi possível ler o backup do Drive.'); }
 }
@@ -129,18 +149,19 @@ async function driveRestore() {
 /* ---------- telas ---------- */
 function driveStatusHtml() {
   const c = driveCfg();
-  if (!c.connected) return `<p class="muted">Salve uma cópia automática dos seus dados no seu Google Drive. Se trocar ou perder o celular, é só restaurar.</p>
-    <button class="btn btn-primary" data-act="driveSetup">${ic('upload')}Configurar backup no Drive</button>`;
-  return `<p class="muted">O arquivo <b>${DRIVE_FILE}</b> no seu Drive é atualizado sozinho ao abrir o app e depois de cada alteração. ${c.lastSync ? `Último envio: ${fmtDate(isoDate(new Date(c.lastSync)))}.` : 'Ainda não enviado.'}</p>
-    <button class="btn btn-soft" data-act="driveNow">${ic('upload')}Salvar no Drive agora</button>
-    <button class="btn btn-ghost" data-act="driveRestoreBtn">${ic('download')}Restaurar do Drive</button>
+  if (!c.connected) return `<p class="muted">Sincronize com o FinFlow do computador e mantenha uma cópia dos dados no seu Google Drive. O que você lança aqui aparece no PC, e vice-versa.</p>
+    <button class="btn btn-primary" data-act="driveSetup">${ic('cloud')}Ligar sincronização pelo Drive</button>`;
+  const last = c.lastSync ? new Date(c.lastSync) : null;
+  return `<p class="muted">Sincroniza ao abrir o app, ao voltar para ele e logo depois de cada alteração, pelo arquivo <b>${DRIVE_FILE}</b> do seu Drive. No PC, o FinFlow lê o mesmo arquivo pela pasta do Google Drive. ${last ? `Última sincronização: ${fmtDate(isoDate(last))} às ${pad(last.getHours())}:${pad(last.getMinutes())}.` : 'Ainda não sincronizado.'}</p>
+    <button class="btn btn-soft" data-act="driveNow">${ic('refresh')}Sincronizar agora</button>
+    <button class="btn btn-ghost" data-act="driveRestoreBtn">${ic('download')}Substituir dados deste celular pelos do Drive</button>
     <button class="btn btn-ghost danger-text" data-act="driveOff">Desconectar</button>`;
 }
 
 ACT.driveSetup = () => {
   closeAllSheets();
   const c = driveCfg(), evo = evoluaClientId(), id = c.clientId || evo, redir = driveRedirectUri();
-  openSheet(`<h3 class="sheet-title">Backup automático no Google Drive</h3>
+  openSheet(`<h3 class="sheet-title">Sincronizar pelo Google Drive</h3>
     ${evo ? `<p class="info">${ic('info')}<span>Você já criou um acesso do Google para o <b>Evolua</b>. Dá para usar o mesmo: só falta autorizar o endereço do FinFlow nele (passo abaixo).</span></p>
       <ol class="steps">
         <li>Abra <a class="link" href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener">Google Auth Platform → Clientes</a> e toque no cliente que você criou para o Evolua.</li>

@@ -114,8 +114,8 @@ function renderHome() {
     if (recent.some(d => d.a || d.b)) html += section('Últimos 6 meses', `<a class="card" href="#/relatorios">${barsChart(recent)}</a>`, `<a class="link" href="#/relatorios">Relatórios</a>`);
     const lb = DB.settings.lastBackup ? daysBetween(DB.settings.lastBackup.slice(0, 10), today()) : null;
     if (driveConnected()) {
-      if (driveDirty() && !driveTokenOk()) html += `<button class="nudge" data-act="driveNow">${ic('cloud')}<span>Há alterações ainda não salvas no Google Drive. <b>Salvar agora</b></span></button>`;
-    } else if (lb === null || lb > 14) html += `<button class="nudge" data-act="driveSetup">${ic('cloud')}<span>${lb === null ? 'Seus dados estão só neste celular.' : `Último backup há ${lb} dias.`} <b>Ativar backup automático no Drive</b></span></button>`;
+      if (!driveTokenOk()) html += `<button class="nudge" data-act="driveNow">${ic('refresh')}<span>${driveDirty() ? 'Há alterações para enviar ao PC.' : 'Veja o que mudou no PC.'} <b>Sincronizar agora</b></span></button>`;
+    } else if (lb === null || lb > 14) html += `<button class="nudge" data-act="driveSetup">${ic('cloud')}<span>Seus dados estão só neste celular. <b>Sincronizar com o PC pelo Google Drive</b></span></button>`;
   }
   return html;
 }
@@ -427,8 +427,9 @@ function renderSettings() {
   const size = new Blob([localStorage.getItem(STORE_KEY) || '']).size;
   let html = pageHead('Ajustes', '', '', '#/mais');
   html += section('Aparência', `<div class="card">${seg('setTheme', [['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Escuro']], DB.settings.theme)}</div>`);
+  html += section('Sincronizar com o PC (Google Drive)', `<div class="card stack-gap">${driveStatusHtml()}</div>`);
   html += section('Trazer dados do computador', `<div class="card stack-gap">
-    <p class="muted">No FinFlow do PC, abra <b>Configurações → Levar dados para o app do celular</b>, envie o arquivo para você mesma e escolha-o aqui. Os dados deste celular são substituídos.</p>
+    <p class="muted">${driveConnected() ? 'Com a sincronização pelo Drive ligada, você não precisa mais disso. Use só se quiser substituir tudo pelos dados de um arquivo.' : 'No FinFlow do PC, abra <b>Configurações → Levar dados para o app do celular</b>, envie o arquivo para você mesma e escolha-o aqui. Os dados deste celular são substituídos.'}</p>
     <label class="btn btn-primary file-btn">${ic('upload')}Importar arquivo do PC<input type="file" accept=".json,application/json" data-bind="importFile" hidden></label>
     ${DB.settings.importedAt ? `<small class="muted">Última importação: ${fmtDate(DB.settings.importedAt.slice(0, 10))}</small>` : ''}
   </div>`);
@@ -438,7 +439,6 @@ function renderSettings() {
     <label class="btn btn-soft file-btn">${ic('upload')}Restaurar backup<input type="file" accept=".json,application/json" data-bind="importFile" hidden></label>
     <small class="muted">${DB.settings.lastBackup ? `Último backup: ${fmtDate(DB.settings.lastBackup.slice(0, 10))}` : 'Nenhum backup feito ainda.'} · ${num(size / 1024, 0)} KB usados</small>
   </div>`);
-  html += section('Backup automático no Google Drive', `<div class="card stack-gap">${driveStatusHtml()}</div>`);
   html += section('Cotações automáticas', `<div class="card stack-gap">
     <p class="muted">CDI, cripto e dólar atualizam sozinhos uma vez por dia. Para <b>ações, FIIs e ETFs</b>, crie um token gratuito em <a class="link" href="https://brapi.dev/dashboard" target="_blank" rel="noopener">brapi.dev</a> e cole aqui.</p>
     ${field('Token da brapi', `<input type="password" value="${esc(marketCfg().brapiToken || '')}" placeholder="Opcional" autocomplete="off" data-bind="brapiToken">`, 'Fica salvo só neste aparelho e não vai para o backup.')}
