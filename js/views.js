@@ -2,11 +2,12 @@
 /* Telas e roteamento. */
 
 const TABS = [['', 'home', 'Início'], ['lancamentos', 'list', 'Lançamentos'], ['+', 'plus', ''], ['cartoes', 'card', 'Cartões'], ['mais', 'grid', 'Mais']];
-const MORE_PAGES = ['mais', 'investimentos', 'relatorios', 'orcamento', 'recorrentes', 'fluxo', 'metas', 'patrimonio', 'categorias', 'ajustes'];
+const MORE_PAGES = ['mais', 'investimentos', 'acoes', 'imposto', 'financiamento', 'relatorios', 'orcamento', 'recorrentes', 'fluxo', 'metas', 'patrimonio', 'categorias', 'ajustes'];
 const ROUTES = {
   '': renderHome, lancamentos: renderEntries, cartoes: renderCards, mais: renderMore, investimentos: renderInvest, relatorios: renderReports,
   orcamento: renderBudget, recorrentes: renderRecurring, fluxo: renderCashFlow, metas: renderGoals,
   patrimonio: renderWealth, categorias: renderCategories, ajustes: renderSettings, novo: () => renderHome(),
+  acoes: renderStocks, imposto: renderTax, financiamento: renderFinancing,
 };
 const STATE = { q: '', invMonth: {} };
 let _lastRoute = null;
@@ -220,6 +221,9 @@ ACT.cardPurchase = el => openQuickAdd('cartao', { cardId: el.dataset.id });
 function renderMore() {
   const tiles = [
     ['investimentos', 'trend', 'Investimentos', brl(assetTotals().current)],
+    ['acoes', 'chart', 'Ações', loadReports()?.stocks ? brl(loadReports().stocks.totals.current) : 'do PC'],
+    ['imposto', 'receipt', 'Imposto', 'mês e declaração'],
+    ['financiamento', 'bank', 'Financiamento', loadReports()?.financings?.length ? brl(loadReports().financings[0].contract.balance) : 'do PC'],
     ['relatorios', 'chart', 'Relatórios', 'gráficos e evolução'],
     ['orcamento', 'donut', 'Orçamento', `${Object.keys(DB.budgets).length} categorias`],
     ['recorrentes', 'repeat', 'Recorrentes', `${DB.recurring.filter(r => r.active).length} ativas`],

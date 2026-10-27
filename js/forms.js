@@ -320,11 +320,55 @@ function openAsset(id) {
       ${a.ticker ? field('Quantidade (cotas)', `<input name="quantity" inputmode="decimal" placeholder="Ex.: 10">`, 'Necessária para a cotação automática continuar certa.') : ''}
       <button class="btn btn-primary" data-act="assetMove" data-id="${id}">${ic('swap')}Registrar</button>
     </form>
+    ${movementsHtml(a)}
     <div class="sheet-actions">
       <button class="btn btn-ghost danger-text" data-act="assetDelete" data-id="${id}">${ic('trash')}Excluir</button>
       <button class="btn btn-ghost" data-act="assetEdit" data-id="${id}">${ic('edit')}Editar dados</button>
     </div>`, { cls: 'sheet-form' });
 }
+
+/* Aportes e resgates do investimento, com editar/excluir (toque na linha). */
+function movementsHtml(a) {
+  const txs = DB.assetTx.filter(t => t.assetId === a.id).sort((x, y) => y.date.localeCompare(x.date));
+  if (!txs.length) return '';
+  return `<h4 class="sub-title">Aportes e resgates</h4><div class="list">${txs.map(t => `<button class="row" data-act="openMovement" data-id="${t.id}">
+    <span class="row-main"><b class="${t.kind === 'Aporte' ? 'pos' : 'neg'}">${t.kind}</b><small>${fmtDate(t.date)}${t.quantity ? ` · ${(+t.quantity).toLocaleString('pt-BR', { maximumFractionDigits: 6 })} cotas` : ''}${t.notes ? ` · ${esc(t.notes)}` : ''}</small></span>
+    <span class="row-amount">${brl(t.amount)}</span>${ic('edit')}</button>`).join('')}</div>`;
+}
+function openMovement(txId) {
+  const t = DB.assetTx.find(x => x.id === txId), a = DB.assets.find(x => x.id === t.assetId);
+  const variable = isVariableIncome(a);
+  openSheet(`<h3 class="sheet-title">Editar ${t.kind.toLowerCase()}</h3>
+    <p class="muted">${esc(a.name)}${isStockSale(t) ? ' · venda de ação: edite pela venda no FinFlow do PC' : ''}</p>
+    <form class="form" onsubmit="return false">
+      ${seg('mvKind', [['Aporte', 'Aporte'], ['Resgate', 'Resgate']], t.kind)}
+      <input type="hidden" name="kind" value="${t.kind}">
+      <div class="row2">${moneyField('amount', t.amount, 'Valor total', variable ? 'data-live="mvPrice"' : '')}${field('Data', `<input name="date" type="date" value="${t.date}">`)}</div>
+      ${variable ? field('Quantidade (cotas)', `<input name="quantity" inputmode="decimal" value="${t.quantity ? String(t.quantity).replace('.', ',') : ''}" data-live="mvPrice">`, `<span class="mv-price">${t.quantity ? `Preço por cota: ${brl(t.amount / t.quantity)}` : ''}</span>`) : ''}
+      ${field('Observação', `<input name="notes" value="${esc(t.notes || '')}">`)}
+      <button class="btn btn-primary btn-xl" data-act="movementSave" data-id="${t.id}">${ic('check')}Salvar</button>
+      <div class="sheet-actions"><button class="btn btn-ghost danger-text" data-act="movementDelete" data-id="${t.id}">${ic('trash')}Excluir</button></div>
+    </form>`, { cls: 'sheet-form' });
+}
+ACT.openMovement = el => { const id = el.dataset.id; closeAllSheets(); setTimeout(() => openMovement(id), 250); };
+LIVE.mvPrice = el => {
+  const form = el.closest('form'), v = formValues(form), q = parseMoney(v.quantity), amount = parseMoney(v.amount);
+  const out = $('.mv-price', form);
+  if (out) out.textContent = q > 0 && amount > 0 ? `Preço por cota: ${brl(amount / q)}` : '';
+};
+ACT.movementSave = el => {
+  const v = formValues(el.closest('form')), amount = parseMoney(v.amount);
+  if (!(amount > 0)) return toast('Informe o valor.');
+  const err = editMovement(el.dataset.id, { kind: v.kind, amount: round2(amount), date: v.date || today(), quantity: parseMoney(v.quantity), notes: (v.notes || '').trim() });
+  if (err) return toast(err);
+  afterSave('Movimentação corrigida.');
+};
+ACT.movementDelete = async el => {
+  if (!await confirmSheet({ title: 'Excluir esta movimentação?', text: 'O valor aplicado e o saldo do investimento são refeitos sem ela.', ok: 'Excluir', danger: true })) return;
+  const err = editMovement(el.dataset.id, null);
+  if (err) return toast(err);
+  afterSave('Movimentação excluída.');
+};
 
 function openAssetEdit(id) {
   const a = DB.assets.find(x => x.id === id);

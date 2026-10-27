@@ -241,6 +241,59 @@ function recordMovement(asset, kind, date, amount, quantity = 0, notes = '') {
   return '';
 }
 
+/* Ações, ETFs, FIIs e cripto com quantidade em todas as compras: refaz quantidade e custo a partir das
+   movimentações (vendas tiram pelo preço médio), como o PC. Sem isso, corrige pela diferença. */
+function canRebuild(asset) {
+  const txs = DB.assetTx.filter(t => t.assetId === asset.id);
+  return isVariableIncome(asset) && txs.length > 0 && txs.every(t => t.kind !== 'Aporte' || t.quantity > 0);
+}
+function rebuildPosition(asset) {
+  const price = asset.quantity ? asset.current / asset.quantity : 0;
+  let quantity = 0, cost = 0;
+  for (const t of DB.assetTx.filter(x => x.assetId === asset.id).sort((a, b) => a.date.localeCompare(b.date))) {
+    if (t.kind === 'Aporte') { quantity += t.quantity || 0; cost += t.amount; }
+    else {
+      if ((t.quantity || 0) > quantity + 1e-9) return `Em ${fmtDate(t.date)} a quantidade ficaria negativa.`;
+      const share = t.quantity && quantity ? Math.min(t.quantity / quantity, 1) : 0;
+      cost -= cost * share; quantity -= t.quantity || 0;
+    }
+  }
+  asset.quantity = Math.max(quantity, 0); asset.invested = round2(Math.max(cost, 0)); asset.current = round2(asset.quantity * price);
+  return '';
+}
+function applyDelta(asset, kind, delta) {
+  if (kind === 'Aporte') { asset.invested = Math.max(asset.invested + delta, 0); asset.current = Math.max(asset.current + delta, 0); }
+  else {
+    const ratio = asset.current ? asset.invested / asset.current : 1;
+    asset.invested = Math.max(asset.invested - delta * ratio, 0); asset.current = Math.max(asset.current - delta, 0);
+  }
+}
+const isStockSale = t => /^Venda de /.test(t.notes || '');
+/* Corrige (ou exclui, com values = null) um aporte/resgate. Devolve '' ou a mensagem de erro; desfaz tudo se der erro. */
+function editMovement(txId, values) {
+  const t = DB.assetTx.find(x => x.id === txId), asset = DB.assets.find(a => a.id === t?.assetId);
+  if (!t || !asset) return 'Movimentação não encontrada.';
+  if (isStockSale(t)) return 'Essa movimentação é uma venda de ação: edite pela venda, no FinFlow do PC.';
+  const backup = { asset: { ...asset }, tx: DB.assetTx.map(x => ({ ...x })) };
+  const rebuild = canRebuild(asset);
+  if (!rebuild) applyDelta(asset, t.kind, -t.amount);
+  if (values) Object.assign(t, values); else DB.assetTx = DB.assetTx.filter(x => x.id !== txId);
+  const err = rebuild && (!values || values.quantity > 0) ? rebuildPosition(asset) : '';
+  if (!rebuild && values) {
+    applyDelta(asset, t.kind, t.amount);
+    if (isVariableIncome(asset) && values.quantity !== backup.tx.find(x => x.id === txId).quantity)
+      asset.quantity = Math.max((asset.quantity || 0) + (t.kind === 'Aporte' ? 1 : -1) * ((values.quantity || 0) - (backup.tx.find(x => x.id === txId).quantity || 0)), 0);
+  }
+  if (rebuild && values && !(values.quantity > 0)) return restoreMovementBackup(asset, backup, 'Informe a quantidade.');
+  if (err) return restoreMovementBackup(asset, backup, err);
+  asset.lastUpdate = today();
+  return '';
+}
+function restoreMovementBackup(asset, backup, message) {
+  Object.assign(asset, backup.asset); DB.assetTx = backup.tx;
+  return message;
+}
+
 /* ================= PATRIMÔNIO ================= */
 function netWorth() {
   const financial = sum(DB.assets, a => a.current);

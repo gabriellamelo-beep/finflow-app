@@ -109,7 +109,12 @@ function syncWithRemote(remotePayload) {
     DB = migrate({ ...data, ...keep });
     rolloverAssets();
   }
+  // Relatórios prontos do PC (financiamento, ações, imposto): o celular só lê e devolve como vieram.
+  const reports = remotePayload?.reports || loadReports();
+  const reportsChanged = !!remotePayload?.reports && remotePayload.reports.generatedAt !== loadReports()?.generatedAt;
+  if (remotePayload?.reports) saveReports(remotePayload.reports);
   const payload = { app: 'finflow', source: 'sync', version: 2, exportedAt: new Date().toISOString(), data, sync: { stamps: ms, deleted: md, by: 'celular' } };
+  if (reports) payload.reports = reports;
   // Só regrava o arquivo se algo mudou (compara registro a registro; a ordem das chaves não importa).
   let remoteChanged = !remotePayload?.data;
   for (const coll of SYNC_COLLS) {
@@ -118,5 +123,5 @@ function syncWithRemote(remotePayload) {
     if (Object.keys(D).length !== Object.keys(md[coll]).length || Object.keys(md[coll]).some(k => D[k] !== md[coll][k])) remoteChanged = true;
   }
   saveSyncBase({ data, stamps: ms, deleted: md });
-  return { payload, incoming, remoteChanged };
+  return { payload, incoming, remoteChanged, reportsChanged };
 }

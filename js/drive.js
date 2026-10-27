@@ -102,7 +102,7 @@ async function driveSync({ force = false, interactive = false, quiet = false } =
   DRIVE.busy = true;
   try {
     const remote = await driveDownload();
-    const { payload, incoming, remoteChanged } = syncWithRemote(remote);
+    const { payload, incoming, remoteChanged, reportsChanged } = syncWithRemote(remote);
     let id = driveCfg().fileId;
     if (remoteChanged || force || !id) id = await driveUpload(payload);
     const c = driveCfg(); Object.assign(c, { fileId: id, lastSync: new Date().toISOString(), needsLogin: false }); saveDrive(c);
@@ -110,7 +110,7 @@ async function driveSync({ force = false, interactive = false, quiet = false } =
     try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); localStorage.setItem('finflow.changed', String(Date.now() - 1000)); } catch (e) { }
     if (incoming) toast(`Sincronizado: ${incoming} alteração(ões) vindas do PC.`);
     else if (!quiet) toast('Sincronizado com o Google Drive.');
-    if (incoming && !$('#sheets .sheet-wrap')) rerender();
+    if ((incoming || (reportsChanged && ['acoes', 'imposto', 'financiamento', 'mais'].includes(parseHash().name))) && !$('#sheets .sheet-wrap')) rerender();
   } catch (e) {
     console.error(e);
     if (e.message === 'auth') { if (interactive) driveAuthorize({ silent: true }); }
